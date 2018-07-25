@@ -9,7 +9,7 @@ from finetune.utils import indico_to_finetune_sequence, finetune_to_indico_seque
 
 class SequenceLabeler(BaseModel):
 
-    def finetune(self, X, Y, batch_size=None):
+    def finetune(self, X, Y=None, batch_size=None):
         """
         :param X: A list of text snippets. Format: [batch_size]
         :param Y: A list of lists of annotations. Format: [batch_size, n_annotations], where each annotation is of the form:
@@ -19,7 +19,7 @@ class SequenceLabeler(BaseModel):
         :param val_size: Float fraction or int number that represents the size of the validation set.
         :param val_interval: The interval for which validation is performed, measured in number of steps.
         """
-        X, Y = indico_to_finetune_sequence(X, Y, none_value="<PAD>")
+        X, Y = indico_to_finetune_sequence(X, labels=Y, none_value="<PAD>")
         arr_encoded = self._text_to_ids(X, Y=Y)
         return self._training_loop(
             arr_encoded,
