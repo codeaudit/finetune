@@ -23,7 +23,7 @@ from finetune.target_encoders import OneHotLabelEncoder, SequenceLabelingEncoder
 from finetune.network_modules import featurizer, language_model, classifier, regressor, sequence_labeler
 from finetune.utils import (
     find_trainable_variables, get_available_gpus, assign_to_gpu, average_grads,
-    iter_data, soft_split, sequence_decode, concat_or_stack,
+    iter_data, soft_split, concat_or_stack,
     guarantee_initialized_variables, sample_with_temperature
 )
 from finetune.encoding import TextEncoder, EncodedOutput, ArrayEncodedOutput
@@ -80,10 +80,23 @@ class BaseModel(object, metaclass=ABCMeta):
         self.is_built = False  # has tf graph been constructed?
         self.is_trained = False  # has model been fine-tuned?
 
+    def _format_for_encoding(self, *Xs):
+        """
+        Most subclasses take in inputs as:
+            List (batch) of list (docs)
+        
+        Encode_multi_input expect the following format:
+            List (batch) of list (docs) of list (subseqs) of text
+        
+        This method is responsible for standardizing inputs to the above format
+        """
+        return [[[x] for x in X] for X in Xs]
+
     def _text_to_ids(self, *Xs, Y=None, max_length=None):
         # Maps lists of text to formatted numpy arrays of token ids and loss-masks marking the lengths of the sequences.
         max_length = max_length or self.config.max_length
-        encoder_out = self.encoder.encode_multi_input(*Xs, Y=None, max_length=max_length)
+        Xs = self._format_for_encoding(*Xs)
+        encoder_out = self.encoder.encode_multi_input(*Xs, Y=Y, max_length=max_length)
         return self._array_format(encoder_out)
 
     @abstractmethod
@@ -122,8 +135,11 @@ class BaseModel(object, metaclass=ABCMeta):
             if value is not None
         }
 
-    @abstractmethod
     def finetune(self, *Xs, Y=None, batch_size=None):
+        # support variable length inputs but assume last is Y
+        if len(Xs) > 1 and Y is None:
+            Y = Xs[-1]
+            Xs = Xs[:-1]
         arr_encoded = self._text_to_ids(*Xs)
         return self._training_loop(arr_encoded, Y=Y, batch_size=batch_size)
 

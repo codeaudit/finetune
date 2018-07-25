@@ -1,8 +1,10 @@
+import tensorflow as tf
+
 from finetune.base import BaseModel
 from finetune.encoding import EncodedOutput, ArrayEncodedOutput
 from finetune.target_encoders import SequenceLabelingEncoder
 from finetune.network_modules import sequence_labeler
-from finetune.utils import indico_to_finetune_sequence, finetune_to_indico_sequence
+from finetune.utils import indico_to_finetune_sequence, finetune_to_indico_sequence, sequence_decode
 
 
 class SequenceLabeler(BaseModel):
@@ -36,7 +38,7 @@ class SequenceLabeler(BaseModel):
         """
         doc_subseqs, _ = indico_to_finetune_sequence(X)
         arr_encoded = self._text_to_ids(doc_subseqs)
-        labels = self._predict(X, max_length=max_length)
+        labels = self._predict(doc_subseqs, max_length=max_length)
         all_subseqs = []
         all_labels = []
         for text, label_seq, position_seq in zip(X, labels, arr_encoded.char_locs):
@@ -65,7 +67,7 @@ class SequenceLabeler(BaseModel):
         doc_texts, doc_annotations = finetune_to_indico_sequence(raw_texts=X, subseqs=all_subseqs, labels=all_labels)
         return doc_annotations
 
-    def featurize(self, Xs, max_length=None):
+    def featurize(self, X, max_length=None):
         """
         Embeds inputs in learned feature space. Can be called before or after calling :meth:`finetune`.
 
@@ -74,7 +76,7 @@ class SequenceLabeler(BaseModel):
                            Providing more than `max_length` tokens as input will result in truncation.
         :returns: np.array of features of shape (n_examples, embedding_size).
         """
-        return self._featurize(*list(zip(*Xs)), max_length=max_length)
+        return self._featurize(X, max_length=max_length)
 
     def predict_proba(self, X, max_length=None):
         """
@@ -87,11 +89,23 @@ class SequenceLabeler(BaseModel):
         """
         doc_subseqs, _ = indico_to_finetune_sequence(X)
         arr_encoded = self._text_to_ids(doc_subseqs)
-        batch_probas = self._predict_proba(X, max_length=max_length)
+        batch_probas = self._predict_proba(doc_subseqs, max_length=max_length)
         result = []
         for token_seq, proba_seq in zip(arr_encoded.tokens, batch_probas):
-            result.append(list(zip(token_seq, proba_seq)))
+            seq_result = []
+            for token, proba_t in zip(token_seq, proba_seq):
+                seq_result.append((
+                    token,
+                    dict(zip(self.label_encoder.classes_, proba_t))
+                ))
+            result.append(seq_result)
         return result
+
+    def _format_for_encoding(self, *Xs):
+        """
+        No op -- the default input format is the same format used by SequenceLabeler
+        """
+        return Xs
 
     def _target_placeholder(self):
         return tf.placeholder(tf.int32, [None, self.config.max_length])  # classification targets
